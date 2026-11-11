@@ -38,14 +38,16 @@ const CFG = {
     scout:    { name: 'Scout',    hp: 30,  speed: 130, reward: 8,  lives: 1, r: 7,  color: '#ff2d3d' },
     soldier:  { name: 'Soldier',  hp: 90,  speed: 75,  reward: 15, lives: 1, r: 10, color: '#1aa0ff' },
     tank:     { name: 'Tank',     hp: 200, speed: 62,  reward: 20, lives: 1, r: 13, color: '#2fb38a' },
-    armored:  { name: 'Armored',  hp: 150, speed: 58,  reward: 22, lives: 1, r: 12, color: '#c2185b', armor: 0.5 },
+    armored:  { name: 'Armored',  hp: 150, speed: 58,  reward: 22, lives: 1, r: 12, color: '#c2185b', armor: 0.35 },
     boss:     { name: 'Boss',     hp: 1500, speed: 30, reward: 150, lives: 5, r: 26, color: '#ff3d7f' },
-    behemoth: { name: 'Behemoth', hp: 420, speed: 40,  reward: 60, lives: 2, r: 18, color: '#7b8594' }
+    behemoth: { name: 'Behemoth', hp: 420, speed: 40,  reward: 60, lives: 2, r: 18, color: '#7b8594' },
+    swarm:    { name: 'Swarm',    hp: 22,  speed: 175, reward: 4,  lives: 1, r: 5,  color: '#ffb020' },
+    shielded: { name: 'Shielded', hp: 120, speed: 55,  reward: 18, lives: 1, r: 11, color: '#8e44ff', shield: 0.6 }
   },
   TOWER: {
     pulse:  { name: 'Pulse Laser',   cost: 100, range: 110, rate: 4,   dmg: 10, color: '#2ea8ff',
               tag: 'Fast, single target',
-              desc: 'Very fast single-target laser. Tier 3 multi-shots 3 foes.' },
+              desc: 'Very fast single-target laser. Tier 3 lets you pick a path.' },
     plasma: { name: 'Plasma Cannon', cost: 250, range: 130, rate: 0.8, dmg: 70, splash: 54, color: '#ff7a2f',
               tag: 'Slow, splash damage',
               desc: 'Slow shells that explode with splash damage.' },
@@ -66,6 +68,30 @@ const EVENTS = [
   { id: 'emp', name: 'EMP Glitch', desc: 'Tower costs -20%, all tower range -15%' },
   { id: 'rush', name: 'Scout Rush', desc: 'Enemies move 30% faster with 40% less HP' }
 ];
+
+// Tier 3 specialisations. Each tower picks A or B when it reaches Tier 3.
+const PATHS = {
+  pulse: {
+    A: { name: 'Multi-shot', desc: 'Hits up to 3 foes at once.', targets: 3 },
+    B: { name: 'Overcharge', desc: 'Fires 60% faster.', rate: 1.6 }
+  },
+  plasma: {
+    A: { name: 'Cluster', desc: 'Splash radius x1.7.', splash: 1.7 },
+    B: { name: 'Heavy', desc: 'Shells hit 50% harder.', dmg: 1.5 }
+  },
+  stasis: {
+    A: { name: 'Deep Freeze', desc: 'Slows to 30% speed for 3s.', slowMult: 0.3, slowT: 3 },
+    B: { name: 'Chain Chill', desc: 'Also chills the next foe.', chain: true }
+  },
+  sniper: {
+    A: { name: 'Armor Piercing', desc: 'Ignores armor.', pierce: true },
+    B: { name: 'Rapid Bolt', desc: 'Fires 40% faster.', rate: 1.4 }
+  },
+  tack: {
+    A: { name: 'Razor', desc: 'Double damage tacks.', dmg: 2 },
+    B: { name: 'Spread', desc: 'Range x1.35, hits up to 9 foes.', range: 1.35, targets: 9 }
+  }
+};
 
 const MAPS = [
   { name: 'Meadow', theme: 'meadow',
@@ -226,7 +252,11 @@ function newState() {
     waveEarned: 0,
     waveKills: 0,
     waveLost: 0,
-    bossNext: false
+    bossNext: false,
+    rand: Math.random,
+    dealt: {},
+    popsBy: {},
+    daily: false
   };
 }
 
@@ -298,17 +328,22 @@ function upgradeCost(t) {
 function towerStats(t) {
   const d = CFG.TOWER[t.type];
   const id = evId();
-  let range = d.range * (1 + 0.1 * t.tier);
+  const pm = (t.path && PATHS[t.type] && PATHS[t.type][t.path]) || {};
+  let range = d.range * (1 + 0.1 * t.tier) * (pm.range || 1);
   if (id === 'emp') range *= 0.85;
-  let rate = d.rate * (1 + 0.25 * t.tier);
+  let rate = d.rate * (1 + 0.25 * t.tier) * (pm.rate || 1);
   if (id === 'solar' && (t.type === 'pulse' || t.type === 'stasis')) rate *= 1.5;
-  const dmg = d.dmg * (1 + 0.5 * t.tier);
+  const dmg = d.dmg * (1 + 0.5 * t.tier) * (pm.dmg || 1);
   return {
     range: range,
     rate: rate,
     dmg: dmg,
-    splash: (d.splash || 0) * (1 + 0.1 * t.tier),
-    targets: t.type === 'tack' ? 6 : ((t.type === 'pulse' && t.tier >= 3) ? 3 : 1)
+    splash: (d.splash || 0) * (1 + 0.1 * t.tier) * (pm.splash || 1),
+    targets: pm.targets || (t.type === 'tack' ? 6 : 1),
+    slowMult: pm.slowMult || CFG.SLOW_MULT,
+    slowT: pm.slowT || CFG.SLOW_T,
+    chain: !!pm.chain,
+    pierce: !!pm.pierce
   };
 }
 
@@ -365,8 +400,10 @@ function spawnChances(w) {
   const pBeh = w >= 5 ? Math.min(0.35, 0.05 + (w - 5) * 0.03) : 0;
   const pTank = w >= 4 ? Math.min(0.2, 0.04 + (w - 4) * 0.02) : 0;
   const pArm = w >= 6 ? Math.min(0.15, 0.03 + (w - 6) * 0.02) : 0;
+  const pSwarm = w >= 7 ? Math.min(0.3, 0.1 + (w - 7) * 0.02) : 0;
+  const pShield = w >= 8 ? Math.min(0.2, 0.04 + (w - 8) * 0.02) : 0;
   const pSol = Math.min(0.6, 0.35 + w * 0.02);
-  return { pBeh: pBeh, pTank: pTank, pArm: pArm, pSol: pSol };
+  return { pBeh: pBeh, pTank: pTank, pArm: pArm, pSwarm: pSwarm, pShield: pShield, pSol: pSol };
 }
 
 // Enemy HP: gentle growth for the first 5 waves, then steeper so later waves get hard.
@@ -381,14 +418,16 @@ function waveCount(w) {
 
 function spawnEnemy(forced) {
   const c = spawnChances(S.wave);
-  const r = Math.random();
-  let type;
-  if (forced) type = forced;
-  else if (r < c.pBeh) type = 'behemoth';
-  else if (r < c.pBeh + c.pTank) type = 'tank';
-  else if (r < c.pBeh + c.pTank + c.pArm) type = 'armored';
-  else if (r < c.pBeh + c.pTank + c.pArm + c.pSol) type = 'soldier';
-  else type = 'scout';
+  const r = S.rand();
+  let type = forced || 'scout';
+  if (!forced) {
+    const table = [['behemoth', c.pBeh], ['tank', c.pTank], ['armored', c.pArm], ['swarm', c.pSwarm], ['shielded', c.pShield], ['soldier', c.pSol]];
+    let acc = 0;
+    for (const row of table) {
+      acc += row[1];
+      if (r < acc) { type = row[0]; break; }
+    }
+  }
   const def = CFG.ENEMY[type];
   const rush = evId() === 'rush';
   const hp = def.hp * hpMult(S.wave) * (rush ? 0.6 : 1);
@@ -410,6 +449,7 @@ function spawnEnemy(forced) {
     reward: def.reward,
     lives: def.lives,
     armor: def.armor || 0,
+    shield: def.shield ? hp * def.shield : 0,
     slowT: 0,
     slowTxtCd: 0,
     dmgCd: 0,
@@ -420,14 +460,25 @@ function spawnEnemy(forced) {
   });
 }
 
-function damage(e, amt) {
+function damage(e, amt, src, pierce) {
   if (e.dead) return;
-  amt *= 1 - (e.armor || 0);
-  e.hp -= amt;
+  if (!pierce) amt *= 1 - (e.armor || 0);
+  if (src) S.dealt[src.type] = (S.dealt[src.type] || 0) + Math.min(amt, e.hp + (e.shield || 0));
+  if (e.shield > 0) {
+    const soak = Math.min(e.shield, amt);
+    e.shield -= soak;
+    amt -= soak;
+  }
   e.hitFlash = 1;
   e.squash = 1;
+  if (amt <= 0) {
+    burst(e.x, e.y, '#9fe3ff', 3);
+    return;
+  }
+  e.hp -= amt;
   if (e.hp <= 0) {
     e.dead = true;
+    if (src) S.popsBy[src.type] = (S.popsBy[src.type] || 0) + 1;
     S.money += e.reward;
     S.kills++;
     S.waveEarned += e.reward;
@@ -447,17 +498,25 @@ function damage(e, amt) {
   }
 }
 
-function applySlow(e) {
+function applySlow(e, mult, dur) {
   burst(e.x, e.y, '#cdf6ff', 3);
   if (e.slowTxtCd <= 0) {
     addText(e.x, e.y - 14, 'Slowed', '#b07cff', 0.9, 12);
     e.slowTxtCd = 1.5;
   }
-  e.slowT = CFG.SLOW_T;
+  e.slowT = dur || CFG.SLOW_T;
+  e.slowMult = mult || CFG.SLOW_MULT;
 }
 
-function startWave() {
+function startWave(callEarly) {
   if (S.over || S.waveActive || S.paused) return;
+  // Calling a wave during the auto-start countdown skips the wait for a small bonus.
+  if (callEarly && S.auto && S.wave > 0 && S.autoTimer > 0) {
+    const bonus = 5 + S.wave * 2;
+    S.money += bonus;
+    addText(CFG.W / 2, 130, 'Early call +$' + bonus, '#ffd54a', 1.4, 14);
+  }
+  S.autoTimer = 0;
   S.wave++;
   S.waveActive = true;
   S.bossNext = S.wave % 5 === 0;
@@ -469,12 +528,17 @@ function startWave() {
     : { text: 'WAVE ' + S.wave, t: 1.8, max: 1.8, color: '#ffe14d' };
   sfx('wave');
   S.toSpawn = waveCount(S.wave);
-  S.spawnTimer = 0.6;
+  if (S.bossNext) {
+    // The boss leads the wave so the escort arrives behind it.
+    spawnEnemy('boss');
+    S.toSpawn--;
+  }
+  S.spawnTimer = S.bossNext ? 1.6 : 0.6;
   S.spawnInterval = Math.max(0.4, 1.1 - S.wave * 0.03);
   S.event = null;
   S.eventTimer = 0;
-  if (S.wave >= CFG.EVENT_MIN_WAVE && Math.random() < CFG.EVENT_CHANCE) {
-    S.event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+  if (S.wave >= CFG.EVENT_MIN_WAVE && S.rand() < CFG.EVENT_CHANCE) {
+    S.event = EVENTS[Math.floor(S.rand() * EVENTS.length)];
     S.eventTimer = CFG.EVENT_TIME;
     sfx('event');
   }
@@ -496,6 +560,32 @@ function endWave() {
   S.autoTimer = CFG.AUTO_DELAY;
 }
 
+// Post-run breakdown: damage and pops per tower, plus totals.
+function renderStats() {
+  const box = $('ovStats');
+  box.innerHTML = '';
+  const rows = Object.keys(CFG.TOWER).map(function (k) {
+    return [CFG.TOWER[k].name, S.dealt[k] || 0, S.popsBy[k] || 0];
+  });
+  rows.push(['Overload pylons', S.dealt.pylon || 0, S.popsBy.pylon || 0]);
+  rows.sort(function (a, b) { return b[1] - a[1]; });
+  for (const r of rows) {
+    const cell = document.createElement('div');
+    const name = document.createElement('span');
+    name.textContent = r[0] + ': ';
+    const val = document.createElement('b');
+    val.textContent = Math.round(r[1]).toLocaleString() + ' dmg · ' + r[2] + ' pops';
+    cell.appendChild(name);
+    cell.appendChild(val);
+    box.appendChild(cell);
+  }
+  const tot = document.createElement('div');
+  tot.className = 'tot';
+  tot.textContent = 'Waves cleared: ' + (S.waveActive ? S.wave - 1 : S.wave) +
+    ' · Lives lost: ' + (CFG.START_LIVES - S.lives) + ' · Total pops: ' + S.kills;
+  box.appendChild(tot);
+}
+
 function gameOver() {
   S.over = true;
   S.placing = null;
@@ -510,6 +600,7 @@ function gameOver() {
   renderScores(top);
   el.ovWave.textContent = S.wave;
   el.ovBest.textContent = best;
+  renderStats();
   el.over.style.display = 'flex';
   sfx('over');
 }
@@ -546,8 +637,13 @@ function placeTower(type, x, y) {
   sfx('build');
 }
 
-function upgradeTower(t) {
+function upgradeTower(t, path) {
   if (!t || t.tier >= 3 || S.over) return;
+  if (t.tier === 2 && !PATHS[t.type][path]) {
+    sfx('deny');
+    addText(t.x, t.y - 22, 'Pick path A or B', '#c62828', 0.9, 12);
+    return;
+  }
   const c = upgradeCost(t);
   if (S.money < c) {
     sfx('deny');
@@ -557,12 +653,13 @@ function upgradeTower(t) {
   S.money -= c;
   t.invested += c;
   t.tier++;
+  if (t.tier === 3) t.path = path;
   t.hop = 1;
   addText(t.x, t.y - 22, 'Tier ' + t.tier, '#b35c00', 1.2, 13);
   sfx('upgrade');
   burst(t.x, t.y, CFG.TOWER[t.type].color, 14);
   if (t.tier === 3) {
-    addText(t.x, t.y - 44, 'MULTI-SHOT!', '#ffe14d', 1.6, 16);
+    addText(t.x, t.y - 44, PATHS[t.type][path].name.toUpperCase() + '!', '#ffe14d', 1.6, 16);
     sfx('tier3');
     burst(t.x, t.y, '#ffffff', 22);
   }
@@ -588,7 +685,7 @@ function triggerPylon(p) {
   for (const e of S.enemies) {
     if (e.dead) continue;
     if (Math.hypot(e.x - p.x, e.y - p.y) > CFG.SHOCK_R) continue;
-    damage(e, dmg);
+    damage(e, dmg, { type: 'pylon' });
     if (!e.dead) {
       e.stunT = CFG.STUN_T;
       addText(e.x, e.y - 16, 'Stunned!', '#ffe14d', 1.2, 13);
@@ -624,25 +721,28 @@ function fire(t, ordered, st) {
       const e = ordered[i];
       S.darts.push({ x1: t.x, y1: t.y, x2: e.x, y2: e.y, life: 0.16, max: 0.16 });
       sfx('shoot');
-      damage(e, st.dmg);
+      damage(e, st.dmg, t);
     }
   } else if (t.type === 'stasis') {
-    const e = ordered[0];
-    S.lasers.push({ x1: t.x, y1: t.y, x2: e.x, y2: e.y, life: 0.15, max: 0.15, color: d.color, beam: true });
+    const hits = ordered.slice(0, st.chain ? 2 : 1);
+    for (const e of hits) {
+      S.lasers.push({ x1: t.x, y1: t.y, x2: e.x, y2: e.y, life: 0.15, max: 0.15, color: d.color, beam: true });
+      damage(e, st.dmg, t);
+      applySlow(e, st.slowMult, st.slowT);
+    }
     sfx('stasis');
-    damage(e, st.dmg);
-    applySlow(e);
   } else if (t.type === 'sniper') {
     const e = ordered[0];
     S.lasers.push({ x1: t.x, y1: t.y, x2: e.x, y2: e.y, life: 0.22, max: 0.22, color: d.color, beam: 'snipe' });
     sfx('snipe');
-    damage(e, st.dmg);
+    damage(e, st.dmg, t, st.pierce);
   } else if (t.type === 'plasma') {
     const e = ordered[0];
     S.shots.push({
-      x: t.x, y: t.y, tx: e.x, ty: e.y, target: e,
+      x: t.x, y: t.y, tx: e.x, ty: e.y, target: e, src: t,
       speed: 420, dmg: st.dmg, splash: st.splash, color: d.color, life: 3, done: false,
       d0: Math.max(1, Math.hypot(e.x - t.x, e.y - t.y)),
+      ember: 2 + Math.random() * 2
     });
     sfx('plasma');
   }
@@ -674,7 +774,7 @@ function explode(p) {
   for (const e of S.enemies) {
     if (e.dead) continue;
     const d = Math.hypot(e.x - p.tx, e.y - p.ty);
-    if (d <= p.splash) damage(e, p.dmg * (1 - 0.4 * (d / p.splash)));
+    if (d <= p.splash) damage(e, p.dmg * (1 - 0.4 * (d / p.splash)), p.src);
   }
   burst(p.tx, p.ty, p.color, 16);
 }
@@ -711,7 +811,7 @@ function updateEnemies(dt) {
     e.squash = Math.max(0, (e.squash || 0) - dt * 8);
     e.dmgCd = Math.max(0, (e.dmgCd || 0) - dt);
     let sp = e.base;
-    if (e.slowT > 0) sp *= CFG.SLOW_MULT;
+    if (e.slowT > 0) sp *= e.slowMult || CFG.SLOW_MULT;
     if (e.stunT > 0) sp = 0;
     e.dist += sp * dt;
     if (e.dist >= PATH.total) {
@@ -766,7 +866,7 @@ function update(dt) {
     if (S.toSpawn > 0) {
       S.spawnTimer -= dt;
       if (S.spawnTimer <= 0) {
-        spawnEnemy(S.bossNext && S.toSpawn === 1 ? 'boss' : null);
+        spawnEnemy(null);
         S.toSpawn--;
         S.spawnTimer = S.spawnInterval;
       }
@@ -793,6 +893,18 @@ function update(dt) {
 /* ==================== RENDER ==================== */
 let LAYOUT = null;
 let MAP_INDEX = 0;
+let dailyMode = false;
+let mapBtnEls = [];
+
+// Today's date as YYYY-MM-DD (local time). Everyone who plays today gets the same enemy sequence.
+function dailyDate() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function dailySeed() {
+  return parseInt(dailyDate().replace(/-/g, ''), 10);
+}
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const DPR = Math.max(1, window.devicePixelRatio || 1);
@@ -1647,7 +1759,7 @@ function drawPylon(g, p) {
 }
 
 /* ---------- bloon enemies ---------- */
-const BLOON_LETTER = { scout: 'S', soldier: 'G', tank: 'T', armored: 'A', behemoth: 'B', boss: 'K' };
+const BLOON_LETTER = { scout: 'S', soldier: 'G', tank: 'T', armored: 'A', behemoth: 'B', boss: 'K', swarm: 'W', shielded: 'D' };
 function drawBloon(g, e) {
   const rb = e.r * BLOON_SCALE;
   const bob = Math.sin(S.time * 6 + e.id * 1.7) * 1.2;
@@ -1771,6 +1883,17 @@ function drawBloon(g, e) {
     g.restore();
   }
 
+  // Shield bubble
+  if (e.shield > 0) {
+    g.beginPath();
+    g.arc(e.x, e.y + bob, rb * 1.35 + 4, 0, TAU);
+    g.fillStyle = 'rgba(159,227,255,0.22)';
+    g.fill();
+    g.strokeStyle = '#9fe3ff';
+    g.lineWidth = 2.5;
+    g.stroke();
+  }
+
   // Health bar (only when damaged)
   if (e.hp < e.maxHp) {
     const pct = Math.max(0, e.hp / e.maxHp);
@@ -1832,7 +1955,7 @@ function drawShots(g) {
     g.fillStyle = 'rgba(255,255,255,0.8)';
     g.fill();
     g.beginPath();
-    g.arc(4, -6, 2 + Math.random() * 2, 0, TAU);
+    g.arc(4, -6, p.ember, 0, TAU);
     g.fillStyle = '#ffd54a';
     g.fill();
     g.restore();
@@ -1961,6 +2084,36 @@ function drawPaused(g) {
   g.restore();
 }
 
+// Health bar across the top of the field while a boss is alive.
+function drawBossBar(g) {
+  let boss = null;
+  for (const e of S.enemies) {
+    if (e.type === 'boss' && !e.dead) { boss = e; break; }
+  }
+  if (!boss || S.over) return;
+  const w = 380;
+  const h = 16;
+  const x = (CFG.W - w) / 2;
+  const y = 10;
+  const pct = Math.max(0, Math.min(1, boss.hp / boss.maxHp));
+  g.save();
+  g.beginPath();
+  roundRectPath(g, x - 4, y - 4, w + 8, h + 8, 10);
+  g.fillStyle = '#14112e';
+  g.fill();
+  g.lineWidth = 3;
+  g.strokeStyle = INK;
+  g.stroke();
+  if (pct > 0) {
+    g.beginPath();
+    roundRectPath(g, x, y, w * pct, h, 6);
+    g.fillStyle = '#ff3d7f';
+    g.fill();
+  }
+  outlined(g, 'BOSS · ' + Math.ceil(Math.max(0, boss.hp)) + ' HP', CFG.W / 2, y + h / 2 + 1, 12, '#ffffff', 3);
+  g.restore();
+}
+
 function render() {
   // Re-apply the device-pixel scale every frame (the context transform was being lost on high-DPI screens).
   const jx = S.shake > 0 ? (Math.random() * 2 - 1) * S.shake * 10 : 0;
@@ -1989,6 +2142,7 @@ function render() {
   drawTexts(ctx);
   drawBanner(ctx);
   drawWaveBanner(ctx);
+  drawBossBar(ctx);
   drawPaused(ctx);
 }
 
@@ -2023,7 +2177,11 @@ const el = {
   tgtBtns: Array.prototype.slice.call(document.querySelectorAll('#tgt button')),
   over: $('over'),
   ovWave: $('ovWave'),
-  restartBtn: $('restartBtn')
+  restartBtn: $('restartBtn'),
+  dailyBtn: $('dailyBtn'),
+  pathRow: $('pathRow'),
+  pathA: $('pathA'),
+  pathB: $('pathB')
 };
 
 const shopCards = {};
@@ -2113,7 +2271,7 @@ function saveScores(list) {
 
 function recordScore() {
   const list = loadScores();
-  list.push({ wave: S.wave, kills: S.kills, map: MAPS[MAP_INDEX].name, date: new Date().toISOString().slice(0, 10) });
+  list.push({ wave: S.wave, kills: S.kills, map: MAPS[MAP_INDEX].name, daily: S.daily, date: new Date().toISOString().slice(0, 10) });
   list.sort(function (a, b) { return (b.wave - a.wave) || (b.kills - a.kills); });
   const top = list.slice(0, 5);
   saveScores(top);
@@ -2134,7 +2292,7 @@ function renderScores(top) {
       const li = document.createElement('li');
       li.textContent = 'Wave ' + r.wave + ' \u00b7 ' + r.kills + ' pops ';
       const meta = document.createElement('span');
-      meta.textContent = r.map + ' ' + r.date.slice(5);
+      meta.textContent = (r.daily ? 'Daily · ' : '') + r.map + ' ' + r.date.slice(5);
       li.appendChild(meta);
       ol.appendChild(li);
     });
@@ -2147,8 +2305,12 @@ function buildMapBtns() {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = m.name;
-    b.addEventListener('click', function () { selectMap(i); });
+    b.addEventListener('click', function () {
+      dailyMode = false;
+      selectMap(i);
+    });
     row.appendChild(b);
+    mapBtnEls.push(b);
   });
 }
 
@@ -2166,17 +2328,22 @@ function setPreview() {
   const total = waveCount(w);
   const c = spawnChances(w);
   const boss = w % 5 === 0 ? 1 : 0;
-  const beh = Math.round(total * c.pBeh);
-  const tank = Math.min(total - beh, Math.round(total * c.pTank));
-  const arm = Math.min(total - beh - tank, Math.round(total * c.pArm));
-  const sol = Math.min(total - beh - tank - arm, Math.round(total * c.pSol));
-  const sc = total - beh - tank - arm - sol - boss;
-  const row = [['scout', sc], ['soldier', sol], ['armored', arm], ['tank', tank], ['behemoth', beh], ['boss', boss]]
-    .filter(function (x) { return x[1] > 0; })
-    .map(function (x) {
-      return '<span class="dotN"><i class="dot" style="background:' + CFG.ENEMY[x[0]].color + '"></i>' + x[1] + '</span>';
+  let left = total - boss;
+  const counts = {};
+  const order = [['behemoth', c.pBeh], ['tank', c.pTank], ['armored', c.pArm], ['swarm', c.pSwarm], ['shielded', c.pShield], ['soldier', c.pSol]];
+  for (const x of order) {
+    const n = Math.min(left, Math.round(total * x[1]));
+    counts[x[0]] = n;
+    left -= n;
+  }
+  counts.scout = left;
+  counts.boss = boss;
+  const row = ['scout', 'soldier', 'armored', 'tank', 'swarm', 'shielded', 'behemoth', 'boss']
+    .filter(function (k) { return counts[k] > 0; })
+    .map(function (k) {
+      return '<span class="dotN"><i class="dot" style="background:' + CFG.ENEMY[k].color + '"></i>' + counts[k] + '</span>';
     }).join(' ');
-  let html = 'Wave ' + w + ': <b>' + total + '</b> foes' + (boss ? ', <b>BOSS</b> last' : '') +
+  let html = 'Wave ' + w + ': <b>' + total + '</b> foes' + (boss ? ', <b>BOSS</b> leads' : '') +
     '<br>' + row + '<br>Enemy HP x' + hpMult(w).toFixed(1);
   if (w >= CFG.EVENT_MIN_WAVE) html += ' · ' + Math.round(CFG.EVENT_CHANCE * 100) + '% event';
   el.preview.innerHTML = html;
@@ -2191,7 +2358,7 @@ function refreshUI() {
   setText(el.lives, S.lives);
   setText(el.wave, S.wave);
   setText(el.best, best);
-  setText(el.evt, S.event ? (S.event.name + ': ' + S.event.desc) : 'No active event');
+  setText(el.evt, S.event ? (S.event.name + ': ' + S.event.desc) : 'No event');
   el.evt.classList.toggle('on', !!S.event);
   setText(el.speedBtn, 'SPEED ' + S.speed + 'x');
   setText(el.pauseBtn, S.paused ? 'RESUME' : 'PAUSE');
@@ -2203,6 +2370,9 @@ function refreshUI() {
   const nextWave = S.wave + 1;
   let startLabel = 'START WAVE ' + nextWave;
   if (nextWave % 5 === 0) startLabel = 'START BOSS WAVE ' + nextWave;
+  if (S.auto && !S.waveActive && S.wave > 0 && S.autoTimer > 0 && !S.over) {
+    startLabel = 'CALL WAVE ' + nextWave + ' EARLY +$' + (5 + S.wave * 2);
+  }
   if (S.waveActive) startLabel = 'WAVE ' + S.wave + ' IN PROGRESS';
   setText(el.startBtn, startLabel);
 
@@ -2215,12 +2385,15 @@ function refreshUI() {
   }
 
   const lockMaps = S.wave > 0 || S.waveActive;
-  document.querySelectorAll('#mapBtns button').forEach(function (b, i) {
+  mapBtnEls.forEach(function (b, i) {
     b.disabled = lockMaps;
-    b.classList.toggle('active', i === MAP_INDEX);
+    b.classList.toggle('active', !dailyMode && i === MAP_INDEX);
   });
+  setText(el.dailyBtn, dailyMode ? 'Daily ON · ' + dailyDate() : 'Daily challenge');
+  el.dailyBtn.disabled = lockMaps;
+  el.dailyBtn.classList.toggle('on', dailyMode);
   const t = selectedTower();
-  el.noSel.style.display = t ? 'none' : 'block';
+  el.noSel.style.display = t ? 'none' : 'flex';
   el.selBox.style.display = t ? 'grid' : 'none';
   if (!t) return;
 
@@ -2234,12 +2407,26 @@ function refreshUI() {
   setText(el.stInv, '$' + t.invested);
   let note;
   if (t.type === 'plasma') note = 'Splash radius ' + Math.round(st.splash);
-  else if (t.type === 'stasis') note = 'Slows to 60% for 2s';
-  else if (t.type === 'sniper') note = 'Targets the furthest foe';
-  else if (t.type === 'tack') note = 'Hits up to 6 foes';
-  else note = st.targets > 1 ? 'MULTI-SHOT x' + st.targets : (t.tier < 3 ? 'Multi-shot unlocks at Tier 3' : '');
+  else if (t.type === 'stasis') note = 'Slows to ' + Math.round(st.slowMult * 100) + '% for ' + st.slowT + 's';
+  else if (t.type === 'sniper') note = st.pierce ? 'Ignores armor' : 'Targets the furthest foe';
+  else if (t.type === 'tack') note = 'Hits up to ' + st.targets + ' foes';
+  else note = st.targets > 1 ? 'Hits up to ' + st.targets + ' foes' : '';
+  if (t.path) note = PATHS[t.type][t.path].name;
+  else if (t.tier === 2) note = 'A ' + PATHS[t.type].A.name + ' / B ' + PATHS[t.type].B.name;
   setText(el.stNote, note);
-  if (t.tier >= 3) {
+  el.stNote.title = t.path ? PATHS[t.type][t.path].desc : '';
+  const pathing = t.tier === 2 && !t.path;
+  el.upBtn.style.display = pathing ? 'none' : '';
+  el.pathRow.style.display = pathing ? 'flex' : 'none';
+  if (pathing) {
+    const uc = upgradeCost(t);
+    const opts = PATHS[t.type];
+    el.pathA.title = opts.A.name + ': ' + opts.A.desc + ' ($' + uc + ')';
+    el.pathB.title = opts.B.name + ': ' + opts.B.desc + ' ($' + uc + ')';
+    el.pathA.disabled = S.over || S.money < uc;
+    el.pathB.disabled = S.over || S.money < uc;
+    setText(el.upPrev, 'Choose a path for $' + uc);
+  } else if (t.tier >= 3) {
     setText(el.upBtn, 'Max tier');
     setText(el.upPrev, 'Fully upgraded');
     el.upBtn.title = '';
@@ -2249,8 +2436,7 @@ function refreshUI() {
     const nx = towerStats({ type: t.type, tier: t.tier + 1 });
     setText(el.upBtn, 'Tier ' + (t.tier + 1) + ' · $' + uc);
     setText(el.upPrev, 'Next: dmg ' + fmt1(st.dmg) + ' → ' + fmt1(nx.dmg) +
-      ' · range ' + Math.round(st.range) + ' → ' + Math.round(nx.range) +
-      (nx.targets > st.targets ? ' · multi-shot' : ''));
+      ' · range ' + Math.round(st.range) + ' → ' + Math.round(nx.range));
     el.upBtn.title = 'Upgrade to Tier ' + (t.tier + 1) + ' for $' + uc;
     el.upBtn.disabled = S.over || S.money < uc;
   }
@@ -2274,6 +2460,14 @@ function toggleSfx() {
   SFX.on = !SFX.on;
   prefs.sfx = SFX.on;
   savePrefs(prefs);
+  sfx('click');
+}
+
+function toggleDaily() {
+  if (S.wave > 0 || S.waveActive) return;
+  dailyMode = !dailyMode;
+  if (dailyMode && MAP_INDEX !== 0) selectMap(0);
+  else resetGame();
   sfx('click');
 }
 
@@ -2319,14 +2513,17 @@ function setupInput() {
     const k = e.key.toLowerCase();
     if (e.key === ' ' || e.key === 'Enter') e.preventDefault();
     if (e.key === ' ') togglePause();
-    else if (e.key === 'Enter') startWave();
+    else if (e.key === 'Enter') startWave(true);
     else if (k === 's') cycleSpeed();
     else if (k === 'm') toggleSfx();
     else if (k === 'u') upgradeTower(selectedTower());
     else if (/^[1-5]$/.test(e.key)) pickTower(Object.keys(CFG.TOWER)[Number(e.key) - 1]);
   });
 
-  el.startBtn.addEventListener('click', startWave);
+  el.startBtn.addEventListener('click', function () { startWave(true); });
+  el.dailyBtn.addEventListener('click', toggleDaily);
+  el.pathA.addEventListener('click', function () { upgradeTower(selectedTower(), 'A'); });
+  el.pathB.addEventListener('click', function () { upgradeTower(selectedTower(), 'B'); });
   el.speedBtn.addEventListener('click', cycleSpeed);
   el.pauseBtn.addEventListener('click', togglePause);
   el.sfxBtn.addEventListener('click', toggleSfx);
@@ -2393,6 +2590,10 @@ function onCanvasClick(p, shift) {
 /* ==================== INIT / RESET / LOOP ==================== */
 function resetGame() {
   S = newState();
+  if (dailyMode) {
+    S.rand = rng(dailySeed());
+    S.daily = true;
+  }
   el.over.style.display = 'none';
   S.auto = !!prefs.auto;
   el.autoChk.checked = S.auto;

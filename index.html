@@ -26,6 +26,7 @@
         <div class="go">GAME OVER</div>
         <div class="sub">Wave reached: <b id="ovWave">0</b> &nbsp;·&nbsp; Best: <b id="ovBest">0</b></div>
         <div id="ovNew"></div>
+        <div id="ovStats" class="ovStats"></div>
         <div class="hsWrap"><div class="hsTitle">Top runs</div><ol id="ovHs" class="hs"></ol></div>
         <button id="restartBtn" type="button">Restart Game</button>
       </div>
@@ -50,6 +51,10 @@
           </div>
           <div class="inspAct">
             <button id="upBtn" type="button">Upgrade</button>
+            <div id="pathRow" class="pathRow" style="display:none">
+              <button id="pathA" type="button">A</button>
+              <button id="pathB" type="button">B</button>
+            </div>
             <button id="sellBtn" type="button">Sell</button>
           </div>
           <div id="tgtCol">
@@ -63,18 +68,15 @@
           </div>
         </div>
       </div>
-      <div class="panel keysPanel" title="Click a gold READY pylon for a stun shockwave">
-        <h3>Shortcuts</h3>
-        <div class="keys">
-          <span><kbd>Space</kbd>pause</span>
-          <span><kbd>Enter</kbd>start wave</span>
-          <span><kbd>S</kbd>speed</span>
-          <span><kbd>M</kbd>sound</span>
-          <span><kbd>U</kbd>upgrade</span>
-          <span><kbd>Esc</kbd>cancel</span>
-          <span><kbd>1</kbd>–<kbd>5</kbd>build</span>
-        </div>
-      </div>
+    </div>
+    <div class="keys" aria-label="Keyboard shortcuts">
+      <span><kbd>1</kbd>–<kbd>5</kbd>build</span>
+      <span><kbd>Enter</kbd>start</span>
+      <span><kbd>Space</kbd>pause</span>
+      <span><kbd>S</kbd>speed</span>
+      <span><kbd>M</kbd>sound</span>
+      <span><kbd>U</kbd>upgrade</span>
+      <span><kbd>Esc</kbd>cancel</span>
     </div>
   </div>
   <div id="side">
@@ -82,6 +84,7 @@
       <h3>Wave Control</h3>
       <button id="startBtn" type="button">START WAVE 1</button>
       <label class="auto"><input type="checkbox" id="autoChk"> Auto-start next wave</label>
+      <button id="dailyBtn" type="button" class="daily">Daily challenge</button>
       <div class="lbl">Map</div>
       <div id="mapBtns" class="mapRow"></div>
       <div id="preview" class="hint"></div>
@@ -89,7 +92,7 @@
     <div class="panel">
       <h3>Build</h3>
       <div id="shop"></div>
-      <div class="hint" style="margin-top:8px">Pick a tower (or press 1–5), then click the field. Hold Shift to place more.</div>
+      <div class="hint buildHint">Pick a tower, then click the field. Hold Shift to place more.</div>
     </div>
     <div class="panel">
       <h3>High Scores</h3>
