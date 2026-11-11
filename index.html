@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Tower Defense</title>
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <div id="hud">
+      <div class="stat"><span class="l">Money</span><span class="v" id="money">$0</span></div>
+      <div class="stat"><span class="l">Lives</span><span class="v" id="lives">0</span></div>
+      <div class="stat"><span class="l">Wave</span><span class="v" id="wave">0</span></div>
+      <div class="stat"><span class="l">Best</span><span class="v" id="best">0</span></div>
+      <div id="evt">No active event</div>
+      <button id="pauseBtn" type="button">PAUSE</button>
+      <button id="sfxBtn" type="button">SOUND ON</button>
+      <button id="speedBtn" type="button">SPEED 1x</button>
+    </div>
+    <div id="wrap">
+      <canvas id="game" width="800" height="500"></canvas>
+      <div id="over">
+        <div class="go">GAME OVER</div>
+        <div class="sub">Wave reached: <b id="ovWave">0</b> &nbsp;·&nbsp; Best: <b id="ovBest">0</b></div>
+        <div id="ovNew"></div>
+        <div class="hsWrap"><div class="hsTitle">Top runs</div><ol id="ovHs" class="hs"></ol></div>
+        <button id="restartBtn" type="button">Restart Game</button>
+      </div>
+    </div>
+    <div id="below">
+      <div class="panel insp">
+        <div id="noSel" class="hint">Click a placed tower to inspect, upgrade, retarget or sell it.</div>
+        <div id="selBox" style="display:none">
+          <div class="inspInfo">
+            <div class="selHead">
+              <span id="selName"></span>
+              <span id="selPips"><span class="pip"></span><span class="pip"></span><span class="pip"></span></span>
+            </div>
+            <div class="stats">
+              <div>Damage <b id="stDmg">0</b></div>
+              <div>Range <b id="stRange">0</b></div>
+              <div>Rate <b id="stRate">0</b></div>
+              <div>Spent <b id="stInv">0</b></div>
+            </div>
+            <div id="stNote"></div>
+            <div id="upPrev"></div>
+          </div>
+          <div class="inspAct">
+            <button id="upBtn" type="button">Upgrade</button>
+            <button id="sellBtn" type="button">Sell</button>
+          </div>
+          <div id="tgtCol">
+            <div class="lbl">Target</div>
+            <div id="tgt">
+              <button type="button" data-t="first">First</button>
+              <button type="button" data-t="last">Last</button>
+              <button type="button" data-t="strong">Strong</button>
+              <button type="button" data-t="close">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel keysPanel" title="Click a gold READY pylon for a stun shockwave">
+        <h3>Shortcuts</h3>
+        <div class="keys">
+          <span><kbd>Space</kbd>pause</span>
+          <span><kbd>Enter</kbd>start wave</span>
+          <span><kbd>S</kbd>speed</span>
+          <span><kbd>M</kbd>sound</span>
+          <span><kbd>U</kbd>upgrade</span>
+          <span><kbd>Esc</kbd>cancel</span>
+          <span><kbd>1</kbd>–<kbd>5</kbd>build</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="side">
+    <div class="panel">
+      <h3>Wave Control</h3>
+      <button id="startBtn" type="button">START WAVE 1</button>
+      <label class="auto"><input type="checkbox" id="autoChk"> Auto-start next wave</label>
+      <div class="lbl">Map</div>
+      <div id="mapBtns" class="mapRow"></div>
+      <div id="preview" class="hint"></div>
+    </div>
+    <div class="panel">
+      <h3>Build</h3>
+      <div id="shop"></div>
+      <div class="hint" style="margin-top:8px">Pick a tower (or press 1–5), then click the field. Hold Shift to place more.</div>
+    </div>
+    <div class="panel">
+      <h3>High Scores</h3>
+      <ol id="hsList" class="hs"></ol>
+    </div>
+  </div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

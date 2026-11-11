@@ -1,0 +1,298 @@
+/* ===== Neon Tower Defense: one-screen desktop layout, single theme ===== */
+:root {
+  --ink: #231a3a;
+  --panel: #fff1d2;
+  --wood: #7a4a22;
+  --hud: #14112e;
+  --yellow: #ffe14d;
+  --green: #6fe05a;
+  --coral: #ff9c8f;
+  --text: #231a3a;
+  --muted: #5a5378;
+  --gold: #b35c00;
+  --radius: 10px;
+  --shadow: 0 4px 0 var(--ink);
+}
+* { box-sizing: border-box; }
+html { background: #1d1a4d; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(ellipse at 50% 0%, #5b4aa8 0%, #2d2566 45%, #161339 100%);
+  color: var(--text);
+  font-family: "Arial Rounded MT Bold", "Trebuchet MS", Arial, sans-serif;
+}
+#app { display: flex; gap: 16px; align-items: flex-start; padding: 12px 16px; }
+
+/* Left column: the canvas grows and shrinks with the window height so the whole game fits. */
+#left {
+  width: min(800px, calc(100vw - 310px), calc((100vh - 244px) * 1.6));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: none;
+}
+#side { width: 260px; flex: none; display: flex; flex-direction: column; gap: 10px; }
+
+/* ----- HUD ----- */
+#hud {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--hud);
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: 0 5px 0 var(--ink);
+  padding: 8px 12px;
+}
+.stat { display: flex; flex-direction: column; line-height: 1.1; padding-right: 4px; }
+.stat .l { font-size: 10px; letter-spacing: 1.5px; color: #b8c4ff; text-transform: uppercase; }
+.stat .v { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#money { color: #ffd54a; }
+#money::before {
+  content: ''; display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff9c4, #ffd54a 55%, #b07d12);
+  border: 2px solid var(--ink); margin-right: 5px; vertical-align: 1px;
+}
+#lives { color: #ff6a6a; }
+#wave { color: #8fe9ff; }
+#best { color: #ffe9a8; }
+#evt { flex: 1; min-width: 0; font-size: 12px; line-height: 1.25; color: #dfe6ff; text-align: right; }
+#evt.on { color: #ffd54a; font-weight: 700; }
+#hud button { font-size: 12px; padding: 8px 9px; white-space: nowrap; }
+#speedBtn { background: var(--yellow); font-size: 13px; }
+#pauseBtn.on { background: #ffd54a; }
+#sfxBtn { background: #fff4d6; }
+#sfxBtn.off { color: #6b6585; }
+
+/* ----- Playfield ----- */
+#wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 8 / 5;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 6px 0 var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+}
+#wrap::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  border: 4px solid var(--ink); border-radius: 14px;
+}
+canvas#game { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+#over {
+  position: absolute; inset: 0;
+  background: rgba(20, 14, 40, 0.82);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  z-index: 2;
+}
+#over .go { font-size: 48px; font-weight: 900; letter-spacing: 5px; color: #ff6a6a; text-shadow: 0 4px 0 var(--ink); }
+#over .sub { font-size: 16px; color: #f3f0ff; }
+#over .sub b { color: #ffd54a; }
+#ovNew { color: #ffd54a; font-weight: 900; letter-spacing: 2px; min-height: 18px; font-size: 14px; }
+.hsWrap { margin-top: 4px; }
+.hsTitle { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #ffd54a; margin-bottom: 2px; }
+#over #ovHs { color: #f3f0ff; }
+#restartBtn { background: var(--green); margin-top: 6px; padding: 9px 22px; font-size: 15px; }
+
+/* ----- Panels ----- */
+.panel {
+  position: relative;
+  background: var(--panel);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 0 5px 0 var(--ink);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.panel h3 {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 3px 9px;
+  background: var(--wood);
+  color: #fff4d6;
+  border: 2px solid var(--ink);
+  border-radius: 7px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.hint { font-size: 11px; color: var(--muted); line-height: 1.35; margin: 0; }
+.lbl { font-size: 11px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; margin: 8px 0 5px; }
+
+/* ----- Buttons (one cartoon style everywhere) ----- */
+button {
+  font: inherit;
+  font-weight: 800;
+  color: var(--ink);
+  background: #fff;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: 0 1px 0 var(--ink); }
+button:focus-visible { outline: 3px solid #4fb4ff; outline-offset: 2px; }
+
+/* ----- Wave control ----- */
+#startBtn {
+  width: 100%;
+  padding: 10px;
+  font-size: 15px;
+  letter-spacing: 1px;
+  background: var(--green);
+  border-radius: 12px;
+  box-shadow: 0 5px 0 var(--ink);
+}
+#startBtn:disabled { background: #cfd3dc; color: #6b6f7d; box-shadow: 0 2px 0 var(--ink); }
+.auto { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; cursor: pointer; }
+.auto input { accent-color: var(--gold); width: 16px; height: 16px; margin: 0; }
+.mapRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.mapRow button { padding: 6px 4px; font-size: 12px; }
+.mapRow button.active { background: var(--yellow); }
+#preview { margin-top: 8px; font-size: 11px; line-height: 1.4; color: var(--text); }
+#preview b { color: var(--gold); }
+
+/* ----- Build shop ----- */
+#shop { display: flex; flex-direction: column; gap: 6px; }
+.card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 3px;
+  background: #fff;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: 0 3px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.08s, background-color 0.08s;
+}
+.card:hover { background: #fff8e6; transform: translateY(-1px); }
+.card.sel { background: var(--yellow); }
+.icon { width: 40px; height: 40px; flex: none; }
+.cinfo { min-width: 0; flex: 1; }
+.crow { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.cname { font-weight: 800; font-size: 13px; color: var(--ink); white-space: nowrap; }
+.ccost { font-size: 12px; font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.card.poor .ccost { color: #c62828; }
+.cdesc { font-size: 11px; color: var(--muted); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ----- High scores ----- */
+.hs { margin: 0; padding-left: 18px; font-size: 11px; line-height: 1.55; color: var(--ink); }
+.hs li span { color: var(--muted); }
+
+/* ----- Bottom row: inspector + shortcuts ----- */
+#below { display: flex; gap: 10px; height: 140px; }
+.insp { flex: 1.5; display: flex; align-items: stretch; padding: 10px 12px; }
+#noSel { margin: auto; text-align: center; font-size: 12px; }
+#selBox {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.05fr 0.8fr 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.selHead { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px; }
+#selName { font-weight: 800; font-size: 14px; color: var(--ink); white-space: nowrap; }
+#selPips { display: flex; gap: 3px; }
+.pip { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 2px solid var(--ink); background: #fff; }
+.pip.on { background: var(--gold); }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; font-size: 11px; color: var(--muted); }
+.stats b { color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+#stNote { font-size: 10px; color: var(--gold); min-height: 12px; margin-top: 3px; line-height: 1.2; }
+#upPrev { font-size: 10px; font-weight: 700; color: var(--ink); min-height: 12px; line-height: 1.25; margin-top: 3px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink); margin-right: 3px; vertical-align: 0; }
+.dotN { white-space: nowrap; }
+.inspAct { display: flex; flex-direction: column; gap: 6px; }
+#upBtn { background: var(--yellow); font-size: 12px; padding: 7px 6px; }
+#sellBtn { background: var(--coral); color: #5a0d12; font-size: 12px; padding: 7px 6px; }
+#tgtCol .lbl { margin: 0 0 4px; }
+#tgt { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+#tgt button { font-size: 11px; padding: 5px 4px; }
+#tgt button.active { background: var(--yellow); }
+.keysPanel { flex: 1; }
+.keys { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; font-size: 11px; color: var(--text); margin-bottom: 6px; }
+.keys span { white-space: nowrap; }
+kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 4px;
+  margin-right: 2px;
+  border: 2px solid var(--ink);
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 2px 0 var(--ink);
+  color: var(--ink);
+  font: 700 10px ui-monospace, Menlo, monospace;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ----- Small screens: stack the columns ----- */
+/* Phones and narrow windows: one column, ordered so the map and the Start button come first. */
+@media (max-width: 860px) {
+  #app { flex-direction: column; align-items: center; padding: 10px; gap: 10px; width: 100%; }
+  #left, #side, #below { display: contents; }
+  #hud, #wrap, .insp, #side > .panel { width: 100%; max-width: 800px; }
+  #hud { order: 1; }
+  #wrap { order: 2; }
+  .insp { order: 3; min-height: 0; }
+  #side > .panel:nth-child(1) { order: 4; }
+  #side > .panel:nth-child(2) { order: 5; }
+  #side > .panel:nth-child(3) { order: 6; }
+  .keysPanel { display: none; }
+  #shop { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .icon { width: 36px; height: 36px; }
+  .card { flex-direction: column; text-align: center; padding: 6px 4px; gap: 4px; }
+  .cinfo { width: 100%; }
+  .crow { flex-direction: column; align-items: center; gap: 0; }
+  .cdesc { display: none; }
+  .cname { font-size: 11px; white-space: normal; line-height: 1.15; }
+  .hint, .stats, #upPrev { font-size: 12px; }
+  .lbl { font-size: 11px; }
+  .mapRow button { font-size: 13px; }
+}
+@media (max-width: 560px) {
+  #hud { flex-wrap: wrap; gap: 8px 12px; }
+  #evt { flex-basis: 100%; order: 10; text-align: left; }
+  #hud button { flex: 1; }
+  #selBox { grid-template-columns: 1fr 1fr; }
+  #tgtCol { grid-column: 1 / -1; }
+  #over .go { font-size: 36px; letter-spacing: 3px; }
+}
+/* Very short windows: High Scores moves out of the way (top runs still show on game over). */
+@media (min-width: 861px) and (max-height: 640px) {
+  #side > .panel:nth-child(3) { display: none; }
+}
+/* Short windows (laptops with browser chrome): tighten the side column so nothing scrolls. */
+@media (min-width: 861px) and (max-height: 800px) {
+  #side { gap: 8px; }
+  #side .panel { padding: 8px 10px; }
+  #side .panel h3 { margin-bottom: 6px; }
+  #side .hint:last-child { display: none; }
+  #shop { gap: 4px; }
+  .card { padding: 2px 6px 2px 2px; }
+  .icon { width: 34px; height: 34px; }
+  #preview { margin-top: 6px; }
+  .auto { margin-top: 6px; }
+}
+@media (pointer: coarse) {
+  button { min-height: 40px; }
+  .card { min-height: 60px; }
+  .keysPanel { display: none; }
+}
