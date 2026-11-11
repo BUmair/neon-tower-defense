@@ -2379,7 +2379,14 @@ function refreshUI() {
   for (const type of Object.keys(shopCards)) {
     const sc = shopCards[type];
     const c = towerCost(type);
-    setText(sc.cost, '$' + c + (evId() === 'emp' ? ' (EMP -20%)' : ''));
+    // During EMP the original price is struck through beside the discounted one, so the label stays short.
+    const emp = evId() === 'emp';
+    const base = CFG.TOWER[type].cost;
+    const key = emp ? base + '>' + c : String(c);
+    if (sc.cost.dataset.k !== key) {
+      sc.cost.dataset.k = key;
+      sc.cost.innerHTML = emp ? '<s>$' + base + '</s> $' + c : '$' + c;
+    }
     sc.card.classList.toggle('sel', S.placing === type);
     sc.card.classList.toggle('poor', S.money < c);
   }
