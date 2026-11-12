@@ -212,6 +212,18 @@ SFX.on = prefs.sfx !== false;
 
 /* ==================== STATE ==================== */
 const mouse = { x: -100, y: -100, inside: false };
+// Touch: the last tapped spot waiting for a second tap to confirm a build, and a wider hit radius for fingers.
+let placeSpot = null;
+let touchHit = false;
+// Phones show the map small, so floating text is scaled up there.
+const touchQuery = window.matchMedia('(pointer: coarse)');
+const smallQuery = window.matchMedia('(max-width: 860px)');
+const TOUCH_UI = touchQuery.matches;
+let TEXT_SCALE = 1;
+function updateTextScale() { TEXT_SCALE = touchQuery.matches && smallQuery.matches ? 1.5 : 1; }
+updateTextScale();
+window.addEventListener('resize', updateTextScale);
+const buildHintEl = document.querySelector('.buildHint');
 
 function newState() {
   return {
@@ -357,7 +369,7 @@ function selectedTower() {
 // Nearest tower under the pointer, so clicks still pick the right one when towers sit close together.
 function towerAt(x, y) {
   let best = null;
-  let bestD = 18;
+  let bestD = touchHit ? 30 : 18;
   for (const t of S.towers) {
     const d = Math.hypot(t.x - x, t.y - y);
     if (d <= bestD) { best = t; bestD = d; }
@@ -366,7 +378,8 @@ function towerAt(x, y) {
 }
 
 function pylonAt(x, y) {
-  for (const p of S.pylons) if (Math.hypot(p.x - x, p.y - y) <= 18) return p;
+  const R = touchHit ? 30 : 18;
+  for (const p of S.pylons) if (Math.hypot(p.x - x, p.y - y) <= R) return p;
   return null;
 }
 
@@ -1751,9 +1764,9 @@ function drawPylon(g, p) {
     g.closePath();
     g.fillStyle = 'rgba(20,15,10,0.45)';
     g.fill();
-    outlined(g, Math.ceil(p.cd) + 's', 0, 28, 12, '#ffffff', 4);
+    outlined(g, Math.ceil(p.cd) + 's', 0, 28, 12 * TEXT_SCALE, '#ffffff', 4);
   } else {
-    outlined(g, 'READY', 0, 28, 11, '#ffe066', 4);
+    outlined(g, 'READY', 0, 28, 11 * TEXT_SCALE, '#ffe066', 4);
   }
   g.restore();
 }
@@ -2019,7 +2032,7 @@ function drawTexts(g) {
   for (const t of S.texts) {
     g.save();
     g.globalAlpha = Math.max(0, t.life / t.max);
-    outlined(g, t.text, t.x, t.y, t.size, t.color, 4);
+    outlined(g, t.text, t.x, t.y, t.size * TEXT_SCALE, t.color, 4);
     g.restore();
   }
 }
@@ -2063,7 +2076,7 @@ function drawGhost(g) {
   g.globalAlpha = 0.75;
   drawTower(g, x, y, type, 0, -Math.PI / 2, !v.ok);
   g.globalAlpha = 1;
-  if (!v.ok) outlined(g, LABELS[v.why] || 'Blocked', x, y - 30, 12, '#ffb3b8', 4);
+  if (!v.ok) outlined(g, LABELS[v.why] || 'Blocked', x, y - 30, 12 * TEXT_SCALE, '#ffb3b8', 4);
   g.restore();
 }
 
@@ -2110,7 +2123,7 @@ function drawBossBar(g) {
     g.fillStyle = '#ff3d7f';
     g.fill();
   }
-  outlined(g, 'BOSS · ' + Math.ceil(Math.max(0, boss.hp)) + ' HP', CFG.W / 2, y + h / 2 + 1, 12, '#ffffff', 3);
+  outlined(g, 'BOSS · ' + Math.ceil(Math.max(0, boss.hp)) + ' HP', CFG.W / 2, y + h / 2 + 1, 12 * TEXT_SCALE, '#ffffff', 3);
   g.restore();
 }
 
@@ -2399,6 +2412,17 @@ function refreshUI() {
   setText(el.dailyBtn, dailyMode ? 'Daily ON · ' + dailyDate() : 'Daily challenge');
   el.dailyBtn.disabled = lockMaps;
   el.dailyBtn.classList.toggle('on', dailyMode);
+  if (buildHintEl) {
+    let hint;
+    if (TOUCH_UI) {
+      if (!S.placing) hint = 'Pick a tower, then tap the map. Tap a tower to upgrade or sell it.';
+      else if (placeSpot) hint = 'Tap the same spot again to build. Tap the tower card to stop.';
+      else hint = 'Tap the map to aim, then tap again to build. Tap the tower card to stop.';
+    } else {
+      hint = 'Pick a tower, then click the field. Hold Shift to place more.';
+    }
+    setText(buildHintEl, hint);
+  }
   const t = selectedTower();
   el.noSel.style.display = t ? 'none' : 'flex';
   el.selBox.style.display = t ? 'grid' : 'none';
@@ -2482,15 +2506,43 @@ function pickTower(type) {
   if (S.over) return;
   S.placing = S.placing === type ? null : type;
   S.selectedId = null;
+  placeSpot = null;
+  mouse.inside = false;
 }
 
 function cancelAll() {
   S.placing = null;
   S.selectedId = null;
+  placeSpot = null;
+  mouse.inside = false;
+}
+
+// Touch placement: the first tap previews the spot (ghost and range), a second tap on the same spot builds.
+// Placement stays active afterwards so several towers can be built in a row.
+function tapPlace(p) {
+  const type = S.placing;
+  const again = placeSpot && Math.hypot(placeSpot.x - p.x, placeSpot.y - p.y) < 30;
+  if (!again) {
+    placeSpot = { x: p.x, y: p.y };
+    mouse.x = p.x;
+    mouse.y = p.y;
+    mouse.inside = true;
+    return;
+  }
+  const v = canPlaceAt(type, p.x, p.y);
+  if (v.ok) {
+    placeTower(type, p.x, p.y);
+    placeSpot = null;
+    mouse.inside = false;
+  } else {
+    sfx('deny');
+    addText(p.x, p.y - 22, v.why === 'Funds' ? 'Not enough $' : 'Blocked', '#c62828', 0.9, 12);
+  }
 }
 
 function setupInput() {
   canvas.addEventListener('pointermove', function (e) {
+    if (e.pointerType !== 'mouse') return;
     const p = toCanvas(e);
     mouse.x = p.x;
     mouse.y = p.y;
@@ -2504,10 +2556,15 @@ function setupInput() {
     if (e.pointerType === 'mouse' && e.button === 2) { cancelAll(); return; }
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const p = toCanvas(e);
-    mouse.x = p.x;
-    mouse.y = p.y;
-    mouse.inside = true;
-    onCanvasClick(p, e.shiftKey);
+    const touch = e.pointerType !== 'mouse';
+    touchHit = touch;
+    if (!touch) {
+      mouse.x = p.x;
+      mouse.y = p.y;
+      mouse.inside = true;
+    }
+    onCanvasClick(p, e.shiftKey, touch);
+    touchHit = false;
   });
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   window.addEventListener('pointerdown', unlockAudio);
@@ -2566,7 +2623,7 @@ function toCanvas(e) {
   };
 }
 
-function onCanvasClick(p, shift) {
+function onCanvasClick(p, shift, touch) {
   if (S.over) return;
   const py = pylonAt(p.x, p.y);
   if (py) {
@@ -2578,6 +2635,12 @@ function onCanvasClick(p, shift) {
   if (tw) {
     S.selectedId = tw.id;
     S.placing = null;
+    placeSpot = null;
+    mouse.inside = false;
+    return;
+  }
+  if (S.placing && touch) {
+    tapPlace(p);
     return;
   }
   if (S.placing) {
