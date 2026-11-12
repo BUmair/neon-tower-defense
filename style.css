@@ -14,6 +14,13 @@
   --shadow: 0 4px 0 var(--ink);
 }
 * { box-sizing: border-box; }
+/* The game is a control surface, not a document: no text selection, no long-press menu, no tap flash. */
+html, body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
 html { background: #1d1a4d; }
 body {
   margin: 0;
