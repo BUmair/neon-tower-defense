@@ -286,23 +286,25 @@ kbd {
   #app { flex-direction: column; align-items: center; padding: 10px; gap: 10px; width: 100%; }
   #left, #side, #below { display: contents; }
   #hud, #wrap, .insp, #side > .panel { width: 100%; max-width: 800px; }
+  /* Order on phones: stats, map, Start, then the tower bar, the selected tower, and high scores last. */
   #hud { order: 1; }
   #wrap { order: 2; }
-  .insp { order: 3; min-height: 0; }
-  #side > .panel:nth-child(1) { order: 4; }
+  #side > .panel:nth-child(1) { order: 3; }
+  .insp { order: 4; min-height: 0; }
   #side > .panel:nth-child(2) { order: 5; }
   #side > .panel:nth-child(3) { order: 6; }
   .keys { display: none; }
+  #startBtn { font-size: 18px; padding: 14px; }
   #shop { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-  .icon { width: 36px; height: 36px; }
   .card { flex-direction: column; text-align: center; padding: 6px 4px; gap: 4px; }
   .cinfo { width: 100%; }
   .crow { flex-direction: column; align-items: center; gap: 0; }
   .cdesc { display: none; }
-  .cname { font-size: 11px; white-space: normal; line-height: 1.15; }
-  .hint, .stats, #upPrev { font-size: 12px; }
-  .lbl { font-size: 11px; }
-  .mapRow button { font-size: 13px; }
+  .cname { font-size: 12px; white-space: normal; line-height: 1.15; }
+  .ccost { font-size: 14px; }
+  .hint, .stats, #upPrev { font-size: 13px; }
+  .lbl { font-size: 12px; }
+  .mapRow button { font-size: 14px; }
 }
 @media (max-width: 560px) {
   #hud { flex-wrap: wrap; gap: 8px 12px; }
