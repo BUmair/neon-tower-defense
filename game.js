@@ -2162,6 +2162,7 @@ function render() {
 /* ==================== UI ==================== */
 const $ = function (id) { return document.getElementById(id); };
 const el = {
+  resetView: $('resetView'),
   money: $('money'),
   lives: $('lives'),
   wave: $('wave'),
@@ -2416,8 +2417,11 @@ function refreshUI() {
     let hint;
     if (TOUCH_UI) {
       if (!S.placing) hint = 'Pick a tower, then tap the map. Tap a tower to upgrade or sell it.';
-      else if (placeSpot) hint = 'Tap the same spot again to build. Tap the tower card to stop.';
-      else hint = 'Tap the map to aim, then tap again to build. Tap the tower card to stop.';
+      else {
+        const d = CFG.TOWER[S.placing];
+        const info = d.name + ' · ' + d.tag + ' · $' + towerCost(S.placing) + '. ';
+        hint = info + (placeSpot ? 'Tap the same spot again to build.' : 'Tap the map to aim, then tap again to build.') + ' Tap the card to stop.';
+      }
     } else {
       hint = 'Pick a tower, then click the field. Hold Shift to place more.';
     }
@@ -2506,43 +2510,125 @@ function pickTower(type) {
   if (S.over) return;
   S.placing = S.placing === type ? null : type;
   S.selectedId = null;
-  placeSpot = null;
+  placeSpot = null; placeTap = null;
   mouse.inside = false;
 }
 
 function cancelAll() {
   S.placing = null;
   S.selectedId = null;
-  placeSpot = null;
+  placeSpot = null; placeTap = null;
   mouse.inside = false;
 }
 
 // Touch placement: the first tap previews the spot (ghost and range), a second tap on the same spot builds.
 // Placement stays active afterwards so several towers can be built in a row.
+// The preview is drawn above the finger (TOUCH_AIM) so the thumb doesn't hide it.
+const TOUCH_AIM = 40;
+let placeTap = null;
 function tapPlace(p) {
   const type = S.placing;
-  const again = placeSpot && Math.hypot(placeSpot.x - p.x, placeSpot.y - p.y) < 30;
+  const again = placeTap && Math.hypot(placeTap.x - p.x, placeTap.y - p.y) < 30;
+  const aim = { x: p.x, y: Math.max(0, p.y - TOUCH_AIM) };
   if (!again) {
-    placeSpot = { x: p.x, y: p.y };
-    mouse.x = p.x;
-    mouse.y = p.y;
+    placeTap = { x: p.x, y: p.y };
+    placeSpot = aim;
+    mouse.x = aim.x;
+    mouse.y = aim.y;
     mouse.inside = true;
     return;
   }
-  const v = canPlaceAt(type, p.x, p.y);
+  const v = canPlaceAt(type, aim.x, aim.y);
   if (v.ok) {
-    placeTower(type, p.x, p.y);
-    placeSpot = null;
+    placeTower(type, aim.x, aim.y);
+    if (navigator.vibrate) navigator.vibrate(12);
+    placeSpot = null; placeTap = null;
     mouse.inside = false;
   } else {
     sfx('deny');
-    addText(p.x, p.y - 22, v.why === 'Funds' ? 'Not enough $' : 'Blocked', '#c62828', 0.9, 12);
+    if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+    addText(aim.x, aim.y - 22, v.why === 'Funds' ? 'Not enough $' : 'Blocked', '#c62828', 0.9, 12);
   }
+}
+
+/* ---------- touch: pinch to zoom and pan the map, tap to build ----------
+   The canvas is zoomed with a CSS transform, so taps still convert to game
+   coordinates correctly (getBoundingClientRect includes the transform). */
+const view = { z: 1, x: 0, y: 0 };
+const touches = new Map();
+let gesture = null;
+
+function clampView() {
+  const w = canvas.parentElement.clientWidth;
+  const h = canvas.parentElement.clientHeight;
+  view.z = Math.min(3, Math.max(1, view.z));
+  view.x = Math.min(0, Math.max(w - w * view.z, view.x));
+  view.y = Math.min(0, Math.max(h - h * view.z, view.y));
+  canvas.style.transform = view.z > 1 ? 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.z + ')' : '';
+  el.resetView.hidden = view.z <= 1;
+}
+
+// Zoom to nz while keeping the point (mx, my), in map-frame pixels, under the fingers.
+function zoomAt(mx, my, nz) {
+  const z = Math.min(3, Math.max(1, nz));
+  view.x = mx - (mx - view.x) * (z / view.z);
+  view.y = my - (my - view.y) * (z / view.z);
+  view.z = z;
+  clampView();
+}
+
+function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function touchDown(e) {
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  canvas.setPointerCapture(e.pointerId);
+  if (touches.size === 1) {
+    gesture = { sx: e.clientX, sy: e.clientY, moved: false, pinch: null };
+  } else if (touches.size === 2 && gesture) {
+    const v = [...touches.values()];
+    gesture.moved = true;
+    gesture.pinch = { d: dist2(v[0], v[1]), z: view.z };
+  }
+}
+
+function touchMove(e) {
+  const prev = touches.get(e.pointerId);
+  if (!prev) return;
+  const cur = { x: e.clientX, y: e.clientY };
+  touches.set(e.pointerId, cur);
+  if (!gesture) return;
+  if (touches.size === 2 && gesture.pinch) {
+    const v = [...touches.values()];
+    const r = canvas.parentElement.getBoundingClientRect();
+    const mx = (v[0].x + v[1].x) / 2 - r.left;
+    const my = (v[0].y + v[1].y) / 2 - r.top;
+    zoomAt(mx, my, gesture.pinch.z * dist2(v[0], v[1]) / gesture.pinch.d);
+    return;
+  }
+  const travel = Math.hypot(cur.x - gesture.sx, cur.y - gesture.sy);
+  if (travel > 10) gesture.moved = true;
+  if (touches.size === 1 && view.z > 1 && gesture.moved) {
+    view.x += cur.x - prev.x;
+    view.y += cur.y - prev.y;
+    clampView();
+  }
+}
+
+function touchUp(e, cancelled) {
+  if (!touches.has(e.pointerId)) return;
+  touches.delete(e.pointerId);
+  if (touches.size > 0) { if (gesture) gesture.moved = true; return; }
+  const g = gesture;
+  gesture = null;
+  if (cancelled || !g || g.moved || g.pinch) return;
+  touchHit = true;
+  onCanvasClick(toCanvas(e), false, true);
+  touchHit = false;
 }
 
 function setupInput() {
   canvas.addEventListener('pointermove', function (e) {
-    if (e.pointerType !== 'mouse') return;
+    if (e.pointerType !== 'mouse') { touchMove(e); return; }
     const p = toCanvas(e);
     mouse.x = p.x;
     mouse.y = p.y;
@@ -2553,19 +2639,24 @@ function setupInput() {
     if (e.pointerType === 'mouse') mouse.inside = false;
   });
   canvas.addEventListener('pointerdown', function (e) {
-    if (e.pointerType === 'mouse' && e.button === 2) { cancelAll(); return; }
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType !== 'mouse') { touchDown(e); return; }
+    if (e.button === 2) { cancelAll(); return; }
+    if (e.button !== 0) return;
     const p = toCanvas(e);
-    const touch = e.pointerType !== 'mouse';
-    touchHit = touch;
-    if (!touch) {
-      mouse.x = p.x;
-      mouse.y = p.y;
-      mouse.inside = true;
-    }
-    onCanvasClick(p, e.shiftKey, touch);
-    touchHit = false;
+    mouse.x = p.x;
+    mouse.y = p.y;
+    mouse.inside = true;
+    onCanvasClick(p, e.shiftKey, false);
   });
+  canvas.addEventListener('pointerup', function (e) { if (e.pointerType !== 'mouse') touchUp(e, false); });
+  canvas.addEventListener('pointercancel', function (e) { if (e.pointerType !== 'mouse') touchUp(e, true); });
+  el.resetView.addEventListener('click', function () {
+    view.z = 1;
+    view.x = 0;
+    view.y = 0;
+    clampView();
+  });
+  window.addEventListener('resize', clampView);
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   window.addEventListener('pointerdown', unlockAudio);
   window.addEventListener('keydown', function (e) {
@@ -2635,7 +2726,7 @@ function onCanvasClick(p, shift, touch) {
   if (tw) {
     S.selectedId = tw.id;
     S.placing = null;
-    placeSpot = null;
+    placeSpot = null; placeTap = null;
     mouse.inside = false;
     return;
   }
